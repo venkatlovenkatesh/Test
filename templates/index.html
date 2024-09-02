@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jewellery AI Trial</title>
+</head>
+<body>
+    <header>
+        <h1>Jewellery AI Trial</h1>
+        <button id="cameraButton">Start Camera</button>
+    </header>
+
+    <main>
+        <div id="videoContainer" class="hidden">
+            <video id="video" width="960" height="720" autoplay playsinline></video>
+            <img id="processed-video" width="960" height="720" style="display:block;">
+        </div>
+
+        <div class="content-container">
+            <section id="necklaceDesign">
+                <h2>Necklace Design</h2>
+                <div class="gallery-container">
+                    <div>
+                        <img src="{{ url_for('static', filename='necklace_1.png') }}">
+                        <p>Necklace 1</p>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script>
+        let stream;
+        let isStreamActive = false;
+
+        document.getElementById('cameraButton').addEventListener('click', async () => {
+            if (!isStreamActive) {
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    document.getElementById('video').srcObject = stream;
+                    document.getElementById('cameraButton').textContent = 'End Camera';
+                    isStreamActive = true;
+                    document.getElementById('videoContainer').classList.remove('hidden');
+                    sendFramesToServer();
+                } catch (error) {
+                    console.error("Error accessing the camera: ", error);
+                }
+            } else {
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    document.getElementById('video').srcObject = null;
+                    document.getElementById('cameraButton').textContent = 'Start Camera';
+                    isStreamActive = false;
+                    document.getElementById('videoContainer').classList.add('hidden');
+                }
+            }
+        });
+
+        async function sendFramesToServer() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const video = document.getElementById('video');
+            const processedVideo = document.getElementById('processed-video');
+
+            async function processFrame() {
+                if (stream && stream.active) {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    ctx.drawImage(video, 0, 0);
+                    
+                    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+                    const formData = new FormData();
+                    formData.append('frame', blob);
+                    
+                    try {
+                        const response = await fetch('/process_frame', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        
+                        if (!response.ok) throw new Error('Network response was not ok');
+                        
+                        const frameData = await response.json();
+                        processedVideo.src = `data:image/jpeg;base64,${frameData.image}`;
+                        processedVideo.style.display = 'block';
+                        video.style.display = 'none';
+                    } catch (error) {
+                        console.error('Error processing frame:', error);
+                    }
+                    
+                    requestAnimationFrame(processFrame);
+                }
+            }
+            
+            processFrame();
+        }
+    </script>
+</body>
+</html>
